@@ -32,8 +32,15 @@
 
 namespace QBDI {
 
-ExecBlockManager::ExecBlockManager(llvm::MCInstrInfo& MCII, llvm::MCRegisterInfo& MRI, Assembly& assembly, VMInstanceRef vminstance) :
-   total_translated_size(1), total_translation_size(1), vminstance(vminstance), MCII(MCII), MRI(MRI), assembly(assembly) {
+ExecBlockManager::ExecBlockManager(LLVMCPU* llvmCPU[CPUMode::COUNT], Assembly* assembly[CPUMode::COUNT], VMInstanceRef vminstance) :
+   total_translated_size(1), total_translation_size(1), vminstance(vminstance) {
+    unsigned i = 0;
+
+    for(i = 0; i < CPUMode::COUNT; i++) {
+        this->assembly[i] = assembly[i];
+        this->llvmCPU[i] = llvmCPU[i];
+    }
+
 }
 
 ExecBlockManager::~ExecBlockManager() {
@@ -508,6 +515,7 @@ static void freeInstAnalysis(InstAnalysis* analysis) {
 const InstAnalysis* ExecBlockManager::analyzeInstMetadata(const InstMetadata* instMetadata, AnalysisType type) {
     InstAnalysis* instAnalysis = nullptr;
     RequireAction("Engine::analyzeInstMetadata", instMetadata, return nullptr);
+    CPUMode cpuMode = instMetadata->cpuMode;
 
     size_t r = searchRegion(instMetadata->address);
 
@@ -531,7 +539,7 @@ const InstAnalysis* ExecBlockManager::analyzeInstMetadata(const InstMetadata* in
     }
     // Cache miss
     const llvm::MCInst &inst = instMetadata->inst;
-    const llvm::MCInstrDesc &desc = MCII.get(inst.getOpcode());
+    const llvm::MCInstrDesc &desc = llvmCPU[cpuMode]->getMII()->get(inst.getOpcode());
 
     instAnalysis = new InstAnalysis;
     // set all values to NULL/0/false
@@ -543,7 +551,7 @@ const InstAnalysis* ExecBlockManager::analyzeInstMetadata(const InstMetadata* in
         int len = 0;
         std::string buffer;
         llvm::raw_string_ostream bufferOs(buffer);
-        assembly.printDisasm(inst, bufferOs);
+        assembly[cpuMode]->printDisasm(inst, bufferOs);
         bufferOs.flush();
         len = buffer.size() + 1;
         instAnalysis->disassembly = new char[len];
@@ -554,6 +562,7 @@ const InstAnalysis* ExecBlockManager::analyzeInstMetadata(const InstMetadata* in
     if (type & ANALYSIS_INSTRUCTION) {
         instAnalysis->address           = instMetadata->address;
         instAnalysis->instSize          = instMetadata->instSize;
+        instAnalysis->cpuMode           = instMetadata->cpuMode;
         instAnalysis->affectControlFlow = instMetadata->modifyPC;
         instAnalysis->isBranch          = desc.isBranch();
         instAnalysis->isCall            = desc.isCall();
@@ -562,12 +571,12 @@ const InstAnalysis* ExecBlockManager::analyzeInstMetadata(const InstMetadata* in
         instAnalysis->isPredicable      = desc.isPredicable();
         instAnalysis->mayLoad           = desc.mayLoad();
         instAnalysis->mayStore          = desc.mayStore();
-        instAnalysis->mnemonic          = MCII.getName(inst.getOpcode()).data();
+        instAnalysis->mnemonic          = llvmCPU[cpuMode]->getMII()->getName(inst.getOpcode()).data();
     }
 
     if (type & ANALYSIS_OPERANDS) {
         // analyse operands (immediates / registers)
-        analyseOperands(instAnalysis, inst, desc, MRI);
+        analyseOperands(instAnalysis, inst, desc, *llvmCPU[cpuMode]->getMRI());
     }
 
     if (type & ANALYSIS_SYMBOL) {
