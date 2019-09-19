@@ -2,6 +2,13 @@ set(SOURCES "")
 
 if((${OS} STREQUAL "linux") OR (${OS} STREQUAL "android"))
     set(SOURCES ${SOURCES} "src/linux_preload.c")
+elseif(WIN32)
+    if(${ARCH} STREQUAL "X86")
+        set(SOURCES ${SOURCES} "src/win_preload.c" "src/trampoline_x86.asm")
+        set_source_files_properties("src/trampoline_x86.asm" PROPERTIES COMPILE_FLAGS "/safeseh")
+    elseif(${ARCH} STREQUAL "X86-64")
+        set(SOURCES ${SOURCES} "src/win_preload.c" "src/trampoline_x64.asm")
+    endif()
 elseif(${OS} STREQUAL "macOS")
     # Generate MIG interface at config time in the build directory
     execute_process(WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} COMMAND mig ${CMAKE_OSX_SYSROOT}/usr/include/mach/mach_exc.defs)
